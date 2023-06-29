@@ -1,17 +1,15 @@
 SEQXTANT README
 ===============
 
-## Installation ##
+`seqxtant` organizes related genomic sequences in order to study orthologs and
+paralogs in greater detail.
+
+## Overview ##
 
 + Clone or fork the seqxtant GitHub repository
-+ Create a `build` directory inside the repo
-+ Install minconda or anaconda
-+ Create an enviornment and add blast-legacy from bioconda
-+ Download genomes from Phytozome (these were used for testing)
-	+ Arabidopsis thaliana Araport 11
-	+ Oryza sativa v7.0
-	+ Phaseolus vulgaris v2.1
-	+ Physcomitrium patens v3.3
-	+ Vitis vinifera v2.1
-+ Move the `Download...Manifest.csv` and `Phytozome` directory to `build`
-
++ Decide where you want to store the seqxtant database files
++ Set `SEQXTANT` to the directory or use the `--env` option
++ Download genomic fasta, masked, and gff3 files for your favorite genomes
++ Use `seqxtant create` to make a new database
++ Use `seqxtant add` to add genomes to the database
++ Use `seqxtant find` to find related sequences
