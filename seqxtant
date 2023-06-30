@@ -29,20 +29,30 @@ def status(arg, db):
 	d = read_db(db)
 	print(f'Database status: {d["state"]}')
 	print(f'Genomes: {len(d["genomes"])}')
-	
+
 def add_genome(arg, db):
 	d = read_db(db)
 	if d['state'] == 'busy':
 		raise Exception(f'cannot add genome, {db} is currently busy')
-	
+
 	write_db(db, d, 'busy')
 	# copy files to build directory under new name
 	# uncompress as necessary
 	# make blast database
 	# clean up
 	# get proteins and transcripts?
-	
+
 	write_db(db, d, 'ready')
+
+def find(arg, db):
+	print(arg.genome)
+	print(arg.location)
+	if arg.paralogs: print('including paralogs')
+	if arg.limit: print(arg.limit)
+	# extract sequence from target genome
+	# get annotation from same region
+	# blast to find related sequences
+	# figure out how they are organized
 
 ## CLI ##
 parser = argparse.ArgumentParser(description='genomic homology multi-mapper')
@@ -60,6 +70,14 @@ parse_add.add_argument('fasta', help='genome in fasta')
 parse_add.add_argument('masked', help='hard-masked genome in fasta')
 parse_add.add_argument('gff3', help='annotation in gff3')
 parse_add.set_defaults(func=add_genome)
+
+parse_find = subparsers.add_parser('find', help='find related sequences')
+parse_find.add_argument('genome', help='genome name')
+parse_find.add_argument('location', help='chrom:begin-end')
+parse_find.add_argument('--limit', nargs='+', help='limit to specific genomes')
+parse_find.add_argument('--paralogs', action='store_true',
+	help='include paralogs from host genome')
+parse_find.set_defaults(func=find)
 
 try:
 	arg = parser.parse_args()
