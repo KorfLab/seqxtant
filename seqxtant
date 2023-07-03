@@ -85,7 +85,7 @@ except:
 	print('seqxtant requires a sub-command, use --help for more info')
 	sys.exit(1)
 
-## ENV ##
+## Database Location ##
 if arg.env: env = arg.env
 else:       env = os.getenv('SEQXTANT')
 if not env: raise Exception('you must set SEQXTANT or use --env option')
