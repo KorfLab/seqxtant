@@ -4,25 +4,36 @@ import argparse
 import json
 import os
 import re
-import shutil
+import subprocess
 import sys
 
+## Database Functions
 
 def read_db(db):
 	with open(db) as fp:
 		return json.load(fp)
 
-def write_db(db, d, state):
-	d['state'] = state
+def write_db(db, d):
 	with open(db, 'w') as fp:
 		fp.write(json.dumps(d, indent=4))
 
-def create(arg, db):
+def run(arg, cmd):
+	if arg.verbose: print(cmd, file=sys.stderr, end=' ...')
+	ret = subprocess.run(cmd, shell=True).returncode
+	if ret != 0:
+		raise Exception(f'{cmd} failed with status {ret}')
+	if arg.verbose: print(f' done', file=sys.stderr)
+
+## Subcommand Functions
+
+def create(arg, env):
+	db = f'{env}/seqxtant.json'
 	if os.path.isfile(db):
 		raise Exception(f'seqxtant databse already exists at {db}')
-	write_db(db, {'genomes':[]}, 'ready')
+	write_db(db, {'state': 'ready', 'genomes': []})
 
-def status(arg, db):
+def status(arg, env):
+	db = f'{env}/seqxtant.json'
 	if not os.path.isfile(db):
 		raise Exception(f'{db} is not a seqxtant database location')
 	print(f'Data location: {db}')
@@ -30,21 +41,66 @@ def status(arg, db):
 	print(f'Database status: {d["state"]}')
 	print(f'Genomes: {len(d["genomes"])}')
 
-def add_genome(arg, db):
+def add_genome(arg, env):
+	db = f'{env}/seqxtant.json'
 	d = read_db(db)
-	if d['state'] == 'busy':
+	if d['state'] == 'busy' and not arg.force:
 		raise Exception(f'cannot add genome, {db} is currently busy')
+	if arg.genome in d['genomes'] and not arg.force:
+		raise Exception(f'cannot add genome, {arg.genome} already present')
 
-	write_db(db, d, 'busy')
-	# copy files to build directory under new name
-	# uncompress as necessary
-	# make blast database
-	# clean up
-	# get proteins and transcripts?
+	# copy files to build directory under new names
+	d['state'] = 'busy'
+	write_db(db, d)
+	dna = f'{arg.env}/{arg.genome}.fa'
+	msk = f'{arg.env}/{arg.genome}.masked.fa'
+	gff  = f'{arg.env}/{arg.genome}.gff3'
+	
+	# genome
+	if arg.fasta.endswith('.gz'):
+		run(arg, f'cp -f {arg.fasta} {dna}.gz')
+		run(arg, f'gunzip -f {dna}.gz')
+	else:
+		run(arg, f'cp -f {arg.fasta} {dna}')
+	
+	# masked genome
+	if arg.masked.endswith('.gz'):
+		run(arg, f'cp -f {arg.masked} {msk}.gz')
+		run(arg, f'gunzip -f {msk}.gz')
+	else:
+		run(arg, f'cp -f {arg.masked} {msk}')
+	
+	# gff3
+	if arg.gff3.endswith('.gz'):
+		run(arg, f'cp -f {arg.gff3} {gff}.gz')
+		run(arg, f'gunzip -f {gff}.gz')
+	else:
+		run(arg, f'cp -f {arg.gff3} {gff}')
+	
+	# make blast databases
+	write_db(db, d)
+	run(arg, f'formatdb -i {dna} -p F -o T')
+	
+	# done
+	if arg.genome not in d['genomes']: d['genomes'].append(arg.genome)
+	d['state'] = 'ready'
+	write_db(db, d)
 
-	write_db(db, d, 'ready')
+def validate_genome(arg, env):
+	db = f'{env}/seqxtant.json'
+	d = read_db(db)
+	
+	if arg.genome not in d['genomes']:
+		raise Exception(f'{arg.genome} not found in database')
+	
+	ff = f'--fasta {arg.env}/{arg.genome}.fa'
+	g3 = f'--gff {arg.env}/{arg.genome}.gff3'
+	ht = f'--html {arg.html} --tables {arg.tables}'
+	
+	run(arg, f'calfo --title {arg.genome} {ff} {g3} {ht}')
+	
 
-def find(arg, db):
+def cluster(arg, db):
 	print(arg.genome)
 	print(arg.location)
 	if arg.paralogs: print('including paralogs')
@@ -57,6 +113,7 @@ def find(arg, db):
 ## CLI ##
 parser = argparse.ArgumentParser(description='genomic homology multi-mapper')
 parser.add_argument('--env', help='set data location instead of $SEQXTANT')
+parser.add_argument('--verbose', action='store_true') # dev
 subparsers = parser.add_subparsers(required=True, help='sub-commands')
 
 parse_status = subparsers.add_parser('status', help='db info')
@@ -66,18 +123,26 @@ parse_create = subparsers.add_parser('create', help='new database')
 parse_create.set_defaults(func=create)
 
 parse_add = subparsers.add_parser('add', help='add genome')
+parse_add.add_argument('genome', help='genome name, e.g. C.elegans')
 parse_add.add_argument('fasta', help='genome in fasta')
 parse_add.add_argument('masked', help='hard-masked genome in fasta')
 parse_add.add_argument('gff3', help='annotation in gff3')
+parse_add.add_argument('--force', action='store_true') # dev
 parse_add.set_defaults(func=add_genome)
 
-parse_find = subparsers.add_parser('find', help='find related sequences')
+parse_validate = subparsers.add_parser('validate', help='validate genome')
+parse_validate.add_argument('genome', help='genome name, e.g. C.elegans')
+parse_validate.add_argument('html', help='html output file')
+parse_validate.add_argument('tables', help='tables output file')
+parse_validate.set_defaults(func=validate_genome)
+
+parse_find = subparsers.add_parser('cluster', help='cluster related sequences')
 parse_find.add_argument('genome', help='genome name')
 parse_find.add_argument('location', help='chrom:begin-end')
 parse_find.add_argument('--limit', nargs='+', help='limit to specific genomes')
 parse_find.add_argument('--paralogs', action='store_true',
 	help='include paralogs from host genome')
-parse_find.set_defaults(func=find)
+parse_find.set_defaults(func=cluster)
 
 try:
 	arg = parser.parse_args()
@@ -89,7 +154,6 @@ except:
 if arg.env: env = arg.env
 else:       env = os.getenv('SEQXTANT')
 if not env: raise Exception('you must set SEQXTANT or use --env option')
-db = f'{env}/seqxtant.json'
 
 ## Run Subcommand ##
-arg.func(arg, db)
+arg.func(arg, env)
