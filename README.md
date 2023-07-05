@@ -15,14 +15,25 @@ paralogs in greater detail.
 	+ Possible custom post-processing required here
 + Use `seqxtant create` to make a new database
 + Use `seqxtant add` to add fasta and gff files to database
++ Use `seqxtant status` to get information about the database
 + Use `seqstant validate` to check overall genome stats
 + Use `seqxtant cluster` to cluster related sequences...
 
+## Database ##
+
+The "database" is a file called `seqxtant.json` that lives inside a directory
+that is either specified by an environment variable or passed in with the
+`--env` option. Probably should be a sqlite database...
+
+## Fasta and GFF3 ##
+
+
+
 ## Dev Notes ##
 
-Some clades for testing
+Some clades used for testing
 
-+ worms (705M)
++ worms
 	+ C. angaria
 	+ C. brenneri
 	+ C. briggsae

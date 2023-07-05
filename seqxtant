@@ -40,6 +40,8 @@ def status(arg, env):
 	d = read_db(db)
 	print(f'Database status: {d["state"]}')
 	print(f'Genomes: {len(d["genomes"])}')
+	for genome in d['genomes']:
+		print(f'\t{genome}')
 
 def add_genome(arg, env):
 	db = f'{env}/seqxtant.json'
@@ -80,6 +82,7 @@ def add_genome(arg, env):
 	# make blast databases
 	write_db(db, d)
 	run(arg, f'formatdb -i {dna} -p F -o T')
+	run(arg, f'formatdb -i {msk} -p F -o T')
 	
 	# done
 	if arg.genome not in d['genomes']: d['genomes'].append(arg.genome)
@@ -98,62 +101,138 @@ def validate_genome(arg, env):
 	ht = f'--html {arg.html} --tables {arg.tables}'
 	
 	run(arg, f'calfo --title {arg.genome} {ff} {g3} {ht}')
+
+
+def store_fasta(arg, env, masked=False):
+	m = re.search('(\S+):(\d+)\-(\d+)', arg.location)
+	if not m: raise Exception('location string malformed')
+	c = m.group(1)
+	b = m.group(2)
+	e = m.group(3)
+	if masked:
+		infile = f'{env}/{arg.genome}.masked.fa'
+		outfile = f'{arg.odir}/query.masked.fa'
+	else:
+		infile = f'{env}/{arg.genome}.fa'
+		outfile = f'{arg.odir}/query.fa'
+	cmd = f'fastacmd -d {infile} -p F -s {c} -L {b},{e}'
+	proc = subprocess.run(cmd, shell=True, capture_output=True)
+	if proc.returncode != 0: raise Exception(f'fastacmd failed: {proc.stderr}')
+	lines = proc.stdout.decode().split('\n')
+	lines[0] = f'>{arg.genome}-{arg.location}'
+	with open(outfile, 'w') as fp:
+		for line in lines:
+			fp.write(line)
+			fp.write('\n')
+
+def run_blast(arg, env, target):
+	qf = f'{arg.odir}/query.masked.fa'
+	db = f'{env}/{target}.fa'
+	of = f'{arg.odir}/{target}.blastn'
+	params = (
+		'-r 1 -q -1',     # +1/-1 scoring scheme, default 1/-3 too stringent
+		'-G 2 -E 2',      # gap penalty is constant -2
+		'-W 10',          # wordsize
+		'-e 1e-10',       # e-value
+		'-b 10 -v 10',    # limit the number of blast alignments
+		f'-a {arg.cpus}', # use 1 cpu
+	)
+	opts = ' '.join(params)
+	cmd = f'blastall -p blastn -d {db} -i {qf} -o {of} {opts}'
+	run(arg, cmd)
+
+def cluster(arg, env):
+	db = f'{env}/seqxtant.json'
+	d = read_db(db)
+	if d['state'] == 'busy': raise Exception(f'database is busy')
+	
+	store_fasta(arg, env,)
+	store_fasta(arg, env, masked=True)
+	
+	if arg.limit: targets = arg.limit
+	else:         targets = d['genomes']
+	
+	for target in targets:
+		if arg.genome == target and not arg.paralogs: continue
+		run_blast(arg, env, target)
+	
+	# figure out how they are organized
+	# get annotation from same region (and change coordinates?)
 	
 
-def cluster(arg, db):
-	print(arg.genome)
-	print(arg.location)
-	if arg.paralogs: print('including paralogs')
-	if arg.limit: print(arg.limit)
-	# extract sequence from target genome
-	# get annotation from same region
-	# blast to find related sequences
-	# figure out how they are organized
-
-## CLI ##
+## CLI top-level ##
 parser = argparse.ArgumentParser(description='genomic homology multi-mapper')
-parser.add_argument('--env', help='set data location instead of $SEQXTANT')
-parser.add_argument('--verbose', action='store_true') # dev
-subparsers = parser.add_subparsers(required=True, help='sub-commands')
+parser.add_argument('--env',
+	help='set data location instead of $SEQXTANT')
+parser.add_argument('--verbose', action='store_true',
+	help='see behind the scenes messages')
+subparsers = parser.add_subparsers(required=True,
+	help='sub-commands')
 
-parse_status = subparsers.add_parser('status', help='db info')
+### status sub-command
+parse_status = subparsers.add_parser('status',
+	help='get information about the database')
 parse_status.set_defaults(func=status)
 
-parse_create = subparsers.add_parser('create', help='new database')
+### create sub-command
+parse_create = subparsers.add_parser('create',
+	help='create a new database')
 parse_create.set_defaults(func=create)
 
-parse_add = subparsers.add_parser('add', help='add genome')
-parse_add.add_argument('genome', help='genome name, e.g. C.elegans')
-parse_add.add_argument('fasta', help='genome in fasta')
-parse_add.add_argument('masked', help='hard-masked genome in fasta')
-parse_add.add_argument('gff3', help='annotation in gff3')
-parse_add.add_argument('--force', action='store_true') # dev
+### add sub-command
+parse_add = subparsers.add_parser('add',
+	help='add new genome to database')
+parse_add.add_argument('--genome', required=True,
+	help='genome name, e.g. C.elegans')
+parse_add.add_argument('--fasta', required=True,
+	help='genome in fasta')
+parse_add.add_argument('--masked', required=True,
+	help='hard-masked genome in fasta')
+parse_add.add_argument('--gff3', required=True,
+	help='annotation in gff3')
+parse_add.add_argument('--force', action='store_true',
+	help='force overwrite of previous data')
 parse_add.set_defaults(func=add_genome)
 
-parse_validate = subparsers.add_parser('validate', help='validate genome')
-parse_validate.add_argument('genome', help='genome name, e.g. C.elegans')
-parse_validate.add_argument('html', help='html output file')
-parse_validate.add_argument('tables', help='tables output file')
+### validate sub-command
+parse_validate = subparsers.add_parser('validate',
+	help='validate genome to check for errors')
+parse_validate.add_argument('--genome', required=True,
+	help='genome name, e.g. C.elegans')
+parse_validate.add_argument('--html', required=True,
+	help='path to html output file')
+parse_validate.add_argument('--tables', required=True,
+	help='path to output directory')
 parse_validate.set_defaults(func=validate_genome)
 
-parse_find = subparsers.add_parser('cluster', help='cluster related sequences')
-parse_find.add_argument('genome', help='genome name')
-parse_find.add_argument('location', help='chrom:begin-end')
-parse_find.add_argument('--limit', nargs='+', help='limit to specific genomes')
+### cluster sub-command
+parse_find = subparsers.add_parser('cluster',
+	help='cluster related sequences')
+parse_find.add_argument('--genome', required=True,
+	help='genome name')
+parse_find.add_argument('--location', required=True,
+	help='chrom:begin-end')
+parse_find.add_argument('--odir', required=True,
+	help='path to output directory')
+parse_find.add_argument('--limit', nargs='+', required=False,
+	help='limit to specific genomes')
+parse_find.add_argument('--cpus', type=int, required=False, default=1,
+	help='number of cpus to use [%(default)i]')
 parse_find.add_argument('--paralogs', action='store_true',
 	help='include paralogs from host genome')
 parse_find.set_defaults(func=cluster)
 
+### sub-command checkpoint
 try:
 	arg = parser.parse_args()
 except:
 	print('seqxtant requires a sub-command, use --help for more info')
 	sys.exit(1)
 
-## Database Location ##
+## Database location ##
 if arg.env: env = arg.env
 else:       env = os.getenv('SEQXTANT')
 if not env: raise Exception('you must set SEQXTANT or use --env option')
 
-## Run Subcommand ##
+## Run subcommand ##
 arg.func(arg, env)
