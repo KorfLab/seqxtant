@@ -155,9 +155,12 @@ def cluster(arg, env):
 	for target in targets:
 		if arg.genome == target and not arg.paralogs: continue
 		run_blast(arg, env, target)
+		# figure out how they are organized
+		# get annotation from same region (and change coordinates?)
+		# create a sub-location pair of files (fa, gff)
 	
-	# figure out how they are organized
-	# get annotation from same region (and change coordinates?)
+	# some kind of report on clustering
+	# send to multiple align?
 	
 
 ## CLI top-level ##
