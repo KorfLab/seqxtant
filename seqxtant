@@ -102,13 +102,16 @@ def validate_genome(arg, env):
 	
 	run(arg, f'calfo --title {arg.genome} {ff} {g3} {ht}')
 
-
-def store_fasta(arg, env, masked=False):
-	m = re.search('(\S+):(\d+)\-(\d+)', arg.location)
+def cbe(s):
+	m = re.search('(\S+):(\d+)\-(\d+)', s)
 	if not m: raise Exception('location string malformed')
 	c = m.group(1)
-	b = m.group(2)
-	e = m.group(3)
+	b = int(m.group(2))
+	e = int(m.group(3))
+	return c, b, e
+
+def store_fasta(arg, env, masked=False):
+	c, b, e = cbe(arg.location)
 	if masked:
 		infile = f'{env}/{arg.genome}.masked.fa'
 		outfile = f'{arg.odir}/query.masked.fa'
@@ -134,12 +137,45 @@ def run_blast(arg, env, target):
 		'-G 2 -E 2',      # gap penalty is constant -2
 		'-W 10',          # wordsize
 		'-e 1e-10',       # e-value
-		'-b 10 -v 10',    # limit the number of blast alignments
-		f'-a {arg.cpus}', # use 1 cpu
+		'-b 100 -v 100',  # limit the number of blast alignments
+		'-m 8',
 	)
 	opts = ' '.join(params)
-	cmd = f'blastall -p blastn -d {db} -i {qf} -o {of} {opts}'
+	cmd = f'blastall -p blastn -d {db} -i {qf} -o {of} {opts} -a {arg.cpus}'
 	run(arg, cmd)
+	
+	# read HSPs
+	hsps = []
+	with open(of) as fp:
+		for line in fp:
+			if line.startswith('#'): continue
+			qid, sid, pct, alen, mis, go, qb, qe, sb, se, e, s = line.split()
+			if sb < se:
+				st = '+'
+			else:
+				st = '-'
+				sb, se = se, sb
+			hsps.append((sid, qb, qe, sb, se, st))
+	
+	# organize hsps into groups
+	for hsp in hsps: print(hsp)
+	
+	hsps.sort(key=lambda x: (x[0], x[3]))
+	c, b, e = cbe(arg.location)
+	length = e - b + 1
+	groups = []
+	group = [hsps[0]]
+	for i in range(1, len(hsps)):
+		if hsps[i][-1] != hsps[i][1]: # diff chrom
+			groups.append(group)
+			group = [hsps[i]]
+	for group in groups:
+		print(group)
+		
+	
+	
+	# sbjcts flip coordinates for minus strand
+	
 
 def cluster(arg, env):
 	db = f'{env}/seqxtant.json'
