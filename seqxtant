@@ -157,8 +157,7 @@ def run_blast(arg, env, target):
 				sb, se = se, sb
 			hsps.append((sid, int(qb), int(qe), int(sb), int(se), st, float(s)))
 	
-	# now that we have all of the alignments in hsps, we need to sort them out
-	
+	return hsps
 
 def cluster(arg, env):
 	db = f'{env}/seqxtant.json'
@@ -171,9 +170,17 @@ def cluster(arg, env):
 	if arg.limit: targets = arg.limit
 	else:         targets = d['genomes']
 	
+"""
+
+This is where we are stopped
+
+"""
+	
+	
 	for target in targets:
 		if arg.genome == target and not arg.paralogs: continue
-		run_blast(arg, env, target)
+		hsps = run_blast(arg, env, target)
+		
 		# figure out how they are organized
 		# get annotation from same region (and change coordinates?)
 		# create a sub-location pair of files (fa, gff)
