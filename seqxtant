@@ -155,10 +155,13 @@ def run_blast(arg, env, target):
 			else:
 				st = '-'
 				sb, se = se, sb
-			hsps.append((sid, qb, qe, sb, se, st))
+			hsps.append((sid, int(qb), int(qe), int(sb), int(se), st, float(s)))
+	
+	print(target)
+	if len(hsps) == 0: return None
 	
 	# organize hsps into groups
-	for hsp in hsps: print(hsp)
+	#for hsp in hsps: print(hsp)
 	
 	hsps.sort(key=lambda x: (x[0], x[3]))
 	c, b, e = cbe(arg.location)
