@@ -157,27 +157,7 @@ def run_blast(arg, env, target):
 				sb, se = se, sb
 			hsps.append((sid, int(qb), int(qe), int(sb), int(se), st, float(s)))
 	
-	print(target)
-	if len(hsps) == 0: return None
-	
-	# organize hsps into groups
-	#for hsp in hsps: print(hsp)
-	
-	hsps.sort(key=lambda x: (x[0], x[3]))
-	c, b, e = cbe(arg.location)
-	length = e - b + 1
-	groups = []
-	group = [hsps[0]]
-	for i in range(1, len(hsps)):
-		if hsps[i][-1] != hsps[i][1]: # diff chrom
-			groups.append(group)
-			group = [hsps[i]]
-	for group in groups:
-		print(group)
-		
-	
-	
-	# sbjcts flip coordinates for minus strand
+	# now that we have all of the alignments in hsps, we need to sort them out
 	
 
 def cluster(arg, env):
