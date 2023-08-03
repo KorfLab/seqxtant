@@ -179,8 +179,8 @@ def getcombo(desc_combos, level_num):
 			if desc_combos[i][0] == level:
 				for j in range(1, len(desc_combos[i+1:])+1):
 					if desc_combos[i+j][0] == level + 1: 
-						desc_combos[i+j] = [desc_combos[i+j][0]] + 
-						desc_combos[i][1:] + desc_combos[i+j][1:]
+						desc_combos[i+j] = ([desc_combos[i+j][0]] + 
+							desc_combos[i][1:] + desc_combos[i+j][1:])
 
 					if desc_combos[i+j][0] <= level: 
 						break
@@ -224,18 +224,16 @@ def score(hsps):
 				# calculate penalty
 				for j in range(1, len(each[1:])+1):
 					for x in [0, 2]:
-						dist = dic_hsps[key][int(each[j])][1+x] - 
-						dic_hsps[key][int(each[j-1])][2+x]
-						if dist <= 0: new_score += dist * 
-						overlap_penalty
+						dist = ((dic_hsps[key][int(each[j])][1+x] - 
+							dic_hsps[key][int(each[j-1])][2+x]))
+						if dist <= 0: new_score += dist * overlap_penalty
 						else: new_score -= dist * dist_penalty
 				
 				# calculate reward
 				if len(each) > 1:
 					for n in each:
 						n = int(n)
-						new_score += dic_hsps[key][n][-1] * 
-						connect_reward
+						new_score += dic_hsps[key][n][-1] * connect_reward
 			if new_score > score:
 				score = new_score
 				chosen_combo = combo
