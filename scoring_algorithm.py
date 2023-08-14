@@ -1,29 +1,82 @@
-import itertools
-
-def desc(stuff, level, alist):
-	for n1 in range(1, len(stuff)+1):
+def score_algo(combo):
+	# scoring system parameters
+	dist_penalty = 0.5
+	overlap_penalty = 2
+	connect_reward = 20
+	# get sum of blast scores
+	score = sum(each[6] for each in combo)
 	
-		for t1 in itertools.combinations(stuff, n1):
+	# get the distance penalty, by the max projection of the distance onto one coordinate axis
+	score -= (dist_penalty * 
+		sum(max(combo[i+1][1]-combo[i][2], combo[i+1][3]-combo[i][4]) 
+		for i in range(len(combo)-1) 
+		if max(combo[i+1][1]-combo[i][2], combo[i+1][3]-combo[i][4]) > 0))
 
-			alist.append([level, t1])
-			remain = ''
-			for c in stuff:
-				if c not in t1 and c > t1[-1]: remain += c
-			desc(remain, level+1, alist)
+	
+	# get the overlap penalty
+	score += (overlap_penalty * 
+		sum(min(combo[i+1][1]-combo[i][2], combo[i+1][3]-combo[i][4]) 
+		for i in range(len(combo)-1) 
+		if min(combo[i+1][1]-combo[i][2], combo[i+1][3]-combo[i][4]) < 0))
+		
+
+	
+	# get connect reward
+	score += connect_reward * (len(combo)-1)
+	return score
 
 
-def getcombo(desc_combos, level_num):
 
-	for level in range(level_num):
-		for i in range(len(desc_combos)-1):
-			if desc_combos[i][0] == level:
-				for j in range(1, len(desc_combos[i+1:])+1):
-					if desc_combos[i+j][0] == level + 1: 
-						desc_combos[i+j] = [desc_combos[i+j][0]] + desc_combos[i][1:] + desc_combos[i+j][1:]
-#						print("pass")
-					if desc_combos[i+j][0] <= level: 
-#						print(desc_combos[i], desc_combos[i+j])
-						break
+def score_sys(hsps):
+	# sort hsps by coordinate and blast score respectively
+	hsps.sort(key = lambda x: (x[1], x[3]))
+	hsps_order = [each for each in hsps]
+	hsps_order.sort(key = lambda x: x[6])
+	combos = []
+
+	while hsps != []:
+		combo = [hsps_order[-1]]
+
+		idx = hsps.index(hsps_order[-1])
+		score = hsps_order[-1][6]
+		# forward
+		for i in range(len(hsps[idx+1:])):
+			new_combo = combo + [hsps[idx+1+i]]
+			new_score = score_algo(new_combo)
+
+			if new_score > score:
+				combo = new_combo
+				score = new_score
+
+		# backward
+		# maybe we should design a penalty for backward connection? (first intron
+		# intends to be the longest one in plant genome)
+		for i in range(len(hsps[:idx])):
+			new_combo = [hsps[idx-1-i]] + combo
+			new_score = score_algo(new_combo)
+
+			if new_score > score:
+				combo = new_combo
+				score = new_score
+
+		# delete used alignments
+
+		for each in combo:
+			hsps.remove(each)
+			hsps_order.remove(each)
+			
+		combos.append(combo)
+	return combos
+
+def score(hsps):
+	dic_hsps = {}
+	dic_combos = {}
+	for hsp in hsps:
+		if 	hsp[0]+hsp[5] not in dic_hsps: dic_hsps[hsp[0]+hsp[5]] = [hsp]
+		else: dic_hsps[hsp[0]+hsp[5]] += [hsp]
+	for sid_st in dic_hsps:
+		dic_combos[sid_st] = score_sys(dic_hsps[sid_st])
+	return dic_combos
 
 alignments = [["Ⅲ", 1573, 1729, 110912, 111079, "+", 102],
               ["Ⅲ", 625, 802, 789, 999, "+", 95],
@@ -36,77 +89,7 @@ alignments = [["Ⅲ", 1573, 1729, 110912, 111079, "+", 102],
 		      ['Ⅲ', 973, 1105, 120439, 120578, '+', 63]
 		     ]
 			 
-alignments.sort(key = lambda x: (x[1], x[2], x[3], x[4]))
-n = len(alignments)
-print(alignments)
-s = ''
-for i in range(n):
-	s += str(i)
 
 
 
-result = []
-desc(s, 0, result)
-#print(result)
-
-getcombo(result, n)
-
-
-
-combos = []
-for each in result:
-	if each[-1][-1] == s[-1]: combos.append(each)
-
-
-#print(len(result))
-#print(result)
-
-
-#for each in combos:
-#	print(each)
-
-#print(len(combos))
-#print(combos[-1])
-
-# scoring system
-dist_penalty = 0.1
-overlap_penalty = 10
-connect_reward = 1
-
-score = -100000000
-count = 0
-for combo in combos:
-	count += 1
-	new_score = 0
-	combo.pop(0)
-#	print(combo)
-#	break
-	for each in combo:
-		# sum of algnment scores
-		for i in each:
-			i = int(i)
-#			print(i)
-#			print(alignments[i][-1])
-			new_score += alignments[i][-1]
-			
-		# calculate penalty
-		for j in range(1, len(each[1:])+1):
-#			print(each)
-			for x in [0, 2]:
-				dist = alignments[int(each[j])][1+x] - alignments[int(each[j-1])][2+x]
-				if dist <= 0: new_score += dist * overlap_penalty
-				else: new_score -= dist * dist_penalty
-		
-		# calculate reward
-		if len(each) > 1:
-			for n in each:
-				n = int(n)
-				new_score += alignments[n][-1] * connect_reward
-#		print(new_score)
-	if new_score > score:
-		score = new_score
-		chosen_combo = combo
-		print(chosen_combo, score)
-			
-#	if count == 3: break			
-
+score(alignments)

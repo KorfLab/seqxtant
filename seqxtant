@@ -6,8 +6,7 @@ import os
 import re
 import subprocess
 import sys
-import itertools
-
+import csv
 ## Database Functions
 
 def read_db(db):
@@ -156,13 +155,13 @@ def run_blast(arg, env, target):
 			else:
 				st = '-'
 				sb, se = se, sb
-			hsps.append([sid, int(qb), int(qe), int(sb), int(se), st, float(s)])
+			hsps.append([sid, int(qb)+13814701, int(qe)+13814701, int(sb), int(se), st, float(s)])
 	
 	return hsps
 
 def score_algo(combo):
 	# scoring system parameters
-	dist_penalty = 0.1
+	dist_penalty = 0.5
 	overlap_penalty = 2
 	connect_reward = 20
 	# get sum of blast scores
@@ -255,14 +254,34 @@ def cluster(arg, env):
 
 # This is where we are stopped
 	for target in targets:
-		if arg.genome == target and not arg.paralogs: continue
-		hsps = run_blast(arg, env, target)
 		
+		if arg.genome == target and not arg.paralogs: continue
+		of = f'{arg.odir}/{target}.gff'
+
+		hsps = run_blast(arg, env, target)
 		dic_hsps = score(hsps)
+
+		# write gff file
+		f = open(of, "w")
+		writer = csv.writer(f, delimiter='\t', lineterminator='\n')
+
+		for sid_st in dic_hsps:
+
+			
+			for gene in dic_hsps[sid_st]:
+				writer.writerow((gene[0][0], "prediction", "gene", 
+					gene[0][3], gene[-1][4], ".", gene[0][5], ".", "ID=gene"))
+
+				writer.writerows((exon[0], "prediction", "exon", exon[3], 
+					exon[4], ".", exon[5], ".", "ID=exon") for exon in gene)
+		f.close()	
+'''
 		for sid_st in dic_hsps:
 			print('\n\n', sid_st)
 			for each in dic_hsps[sid_st]:
 				print(each, '\n')
+'''
+		
 		# figure out how they are organized
 		# get annotation from same region (and change coordinates?)
 		# create a sub-location pair of files (fa, gff)
