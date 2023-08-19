@@ -6,7 +6,7 @@ paralogs in greater detail.
 
 ## Overview ##
 
-+ Install `blast-legacy` via bioconda
++ Install `ab-blast` via https://www.advbiocomp.com personal license
 + Get `grimoire` from KorfLab GitHub
 + Get `seqxtant` from KorfLab GitHub
 + Create a directory where you want to store the seqxtant database files
