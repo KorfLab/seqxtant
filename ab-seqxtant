@@ -54,35 +54,15 @@ def add_genome(arg, env):
 	# copy files to build directory under new names
 	d['state'] = 'busy'
 	write_db(db, d)
-	dna = f'{arg.env}/{arg.genome}.fa'
-	msk = f'{arg.env}/{arg.genome}.masked.fa'
-	gff  = f'{arg.env}/{arg.genome}.gff3'
-	
-	# genome
-	if arg.fasta.endswith('.gz'):
-		run(arg, f'cp -f {arg.fasta} {dna}.gz')
-		run(arg, f'gunzip -f {dna}.gz')
-	else:
-		run(arg, f'cp -f {arg.fasta} {dna}')
-	
-	# masked genome
-	if arg.masked.endswith('.gz'):
-		run(arg, f'cp -f {arg.masked} {msk}.gz')
-		run(arg, f'gunzip -f {msk}.gz')
-	else:
-		run(arg, f'cp -f {arg.masked} {msk}')
-	
-	# gff3
-	if arg.gff3.endswith('.gz'):
-		run(arg, f'cp -f {arg.gff3} {gff}.gz')
-		run(arg, f'gunzip -f {gff}.gz')
-	else:
-		run(arg, f'cp -f {arg.gff3} {gff}')
+
+	xd = f'{arg.env}/{arg.genome}'
+	mskxd = f'{arg.env}/{arg.genome}.masked'
+
 	
 	# make blast databases
 	write_db(db, d)
-	run(arg, f'formatdb -i {dna} -p F -o T')
-	run(arg, f'formatdb -i {msk} -p F -o T')
+	run(arg, f'xdformat -n -o {xd} -I {arg.fasta}')
+	run(arg, f'xdformat -n -o {mskxd} -I {arg.masked}')
 	
 	# done
 	if arg.genome not in d['genomes']: d['genomes'].append(arg.genome)
@@ -113,14 +93,14 @@ def cbe(s):
 def store_fasta(arg, env, masked=False):
 	c, b, e = cbe(arg.location)
 	if masked:
-		infile = f'{env}/{arg.genome}.masked.fa'
+		infile = f'{env}/{arg.genome}.masked'
 		outfile = f'{arg.odir}/query.masked.fa'
 	else:
-		infile = f'{env}/{arg.genome}.fa'
+		infile = f'{env}/{arg.genome}'
 		outfile = f'{arg.odir}/query.fa'
-	cmd = f'fastacmd -d {infile} -p F -s {c} -L {b},{e}'
+	cmd = f'xdget -n -a {b} -b {e} {infile} {c}'	
 	proc = subprocess.run(cmd, shell=True, capture_output=True)
-	if proc.returncode != 0: raise Exception(f'fastacmd failed: {proc.stderr}')
+	if proc.returncode != 0: raise Exception(f'xdget failed: {proc.stderr}')
 	lines = proc.stdout.decode().split('\n')
 	lines[0] = f'>{arg.genome}-{arg.location}'
 	with open(outfile, 'w') as fp:
@@ -130,18 +110,19 @@ def store_fasta(arg, env, masked=False):
 
 def run_blast(arg, env, target):
 	qf = f'{arg.odir}/query.masked.fa'
-	db = f'{env}/{target}.fa'
+	db = f'{env}/{target}'
 	of = f'{arg.odir}/{target}.blastn'
 	params = (
-		'-r 1 -q -1',     # +1/-1 scoring scheme, default 1/-3 too stringent
-		'-G 2 -E 2',      # gap penalty is constant -2
-		'-W 10',          # wordsize
-		'-e 1e-10',       # e-value
-		'-b 100 -v 100',  # limit the number of blast alignments
-		'-m 8',
+		'-M 1 -N -1',          # +1/-1 scoring scheme, default 1/-3 too stringent
+		'-Q 2 -R 2',           # gap penalty is constant -2
+		'-W 10',               # wordsize
+		'--gapE2 1e-10',       # e-value
+		'-B 100 -V 100',       # limit the number of blast alignments
+		'-links -topcomboN 5', # cluster
+		'-mformat 2',
 	)
 	opts = ' '.join(params)
-	cmd = f'blastall -p blastn -d {db} -i {qf} -o {of} {opts} -a {arg.cpus}'
+	cmd = f'ab-blastn {db} {qf} -o {of} {opts} -cpus {arg.cpus}'
 	run(arg, cmd)
 	
 	# read HSPs
@@ -149,97 +130,22 @@ def run_blast(arg, env, target):
 	with open(of) as fp:
 		for line in fp:
 			if line.startswith('#'): continue
-			qid, sid, pct, alen, mis, go, qb, qe, sb, se, e, s = line.split()
-			if sb < se:
+			qid, sid, e, n, sprime, s, alignlen, nident, npos, nmism, \
+			pcident, pcpos, qgaps, qgaplen, sgaps, sgaplen, qframe, \
+			qstart, qend, sframe, sstart, send, group, links \
+			= line.split()
+			if int(qframe) > 0:
 				st = '+'
 			else:
 				st = '-'
-				sb, se = se, sb
+				qstart, qend = qend, qstart
 			hsps.append([
-				sid, int(qb), int(qe), int(sb), int(se), st, float(s)
-			])
-	
+				sid, int(qstart), int(qend), int(sstart), int(send), 
+				st, float(s), group, links
+			])	
 	return hsps
 
-def score_algo(combo):
-	# scoring system parameters
-	dist_penalty = 0.5
-	overlap_penalty = 2
-	connect_reward = 20
-	# get sum of blast scores
-	score = sum(each[6] for each in combo)
-	
-	# get the distance penalty, by the max projection of the distance onto one coordinate axis
-	score -= (dist_penalty * 
-		sum(max(combo[i+1][1]-combo[i][2], combo[i+1][3]-combo[i][4]) 
-		for i in range(len(combo)-1) 
-		if max(combo[i+1][1]-combo[i][2], combo[i+1][3]-combo[i][4]) > 0))
 
-	
-	# get the overlap penalty
-	score += (overlap_penalty * 
-		sum(min(combo[i+1][1]-combo[i][2], combo[i+1][3]-combo[i][4]) 
-		for i in range(len(combo)-1) 
-		if min(combo[i+1][1]-combo[i][2], combo[i+1][3]-combo[i][4]) < 0))
-		
-
-	
-	# get connect reward
-	score += connect_reward * (len(combo)-1)
-	return score
-
-
-
-def score_sys(hsps):
-	# sort hsps by coordinate and blast score respectively
-	hsps.sort(key = lambda x: (x[1], x[3]))
-	hsps_order = [each for each in hsps]
-	hsps_order.sort(key = lambda x: x[6])
-	combos = []
-
-	while hsps != []:
-		combo = [hsps_order[-1]]
-
-		idx = hsps.index(hsps_order[-1])
-		score = hsps_order[-1][6]
-		# forward
-		for i in range(len(hsps[idx+1:])):
-			new_combo = combo + [hsps[idx+1+i]]
-			new_score = score_algo(new_combo)
-
-			if new_score > score:
-				combo = new_combo
-				score = new_score
-
-		# backward
-		# maybe we should design a penalty for backward connection? (first intron
-		# intends to be the longest one in plant genome)
-		for i in range(len(hsps[:idx])):
-			new_combo = [hsps[idx-1-i]] + combo
-			new_score = score_algo(new_combo)
-
-			if new_score > score:
-				combo = new_combo
-				score = new_score
-
-		# delete used alignments
-
-		for each in combo:
-			hsps.remove(each)
-			hsps_order.remove(each)
-			
-		combos.append(combo)
-	return combos
-
-def score(hsps):
-	dic_hsps = {}
-	dic_combos = {}
-	for hsp in hsps:
-		if 	hsp[0]+hsp[5] not in dic_hsps: dic_hsps[hsp[0]+hsp[5]] = [hsp]
-		else: dic_hsps[hsp[0]+hsp[5]] += [hsp]
-	for sid_st in dic_hsps:
-		dic_combos[sid_st] = score_sys(dic_hsps[sid_st])
-	return dic_combos
 
 def cluster(arg, env):
 	db = f'{env}/seqxtant.json'
@@ -261,37 +167,39 @@ def cluster(arg, env):
 		of = f'{arg.odir}/{target}.gff'
 
 		hsps = run_blast(arg, env, target)
-		dic_hsps = score(hsps)
 
 		# write gff file
 		f = open(of, "w")
 		writer = csv.writer(f, delimiter='\t', lineterminator='\n')
-
-		for sid_st in dic_hsps:
-
-			f.write(f"## {sid_st[:-1]} {sid_st[-1]}\n")
-			for region in dic_hsps[sid_st]:
-				writer.writerow((
-					region[0][0], "prediction", "region", 
-					region[0][3], region[-1][4], ".", 
-					region[0][5], ".", 
-					"ID=homoregion"
-				))
-
-				writer.writerows(
-					(algn[0], "prediction", "alignment", 
-					algn[3], algn[4], ".", algn[5], 
-					".", "ID=alignment") 
-					for algn in region
-				)
-		f.close()	
-'''
-		for sid_st in dic_hsps:
-			print('\n\n', sid_st)
-			for each in dic_hsps[sid_st]:
-				print(each, '\n')
-'''
+		f.write(f"## {hsps[0][0]} {hsps[0][5]}\n")
 		
+		group = 0
+		start = 1e+20
+		end = 0
+		algns = []
+		for algn in hsps:
+			new_group = algn[0]
+			if algn[3] < start: start = algn[3]
+			if algn[4] > end: end = algn[4]
+			if new_group != group:
+				region = (
+						algn[0], "prediction", "region", 
+						start, end, ".", 
+						algn[5], ".", "ID=homoregion"
+				)
+			
+			algns.append(algn)
+				
+			writer.writerow(region)
+			writer.writerows(
+				(algn[0], "prediction", "alignment", 
+				algn[3], algn[4], ".", algn[5], 
+				".", "ID=alignment") 
+				for algn in algns
+			)
+		f.close()
+
+
 		# figure out how they are organized
 		# get annotation from same region (and change coordinates?)
 		# create a sub-location pair of files (fa, gff)
@@ -328,8 +236,6 @@ parse_add.add_argument('--fasta', required=True,
 	help='genome in fasta')
 parse_add.add_argument('--masked', required=True,
 	help='hard-masked genome in fasta')
-parse_add.add_argument('--gff3', required=True,
-	help='annotation in gff3')
 parse_add.add_argument('--force', action='store_true',
 	help='force overwrite of previous data')
 parse_add.set_defaults(func=add_genome)
