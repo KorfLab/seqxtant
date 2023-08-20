@@ -12,7 +12,6 @@ paralogs in greater detail.
 + Create a directory where you want to store the seqxtant database files
 + Point `SEQXTANT` to the database directory or use the `--env` option
 + Download genomic fasta, masked, and gff3 files for your favorite genomes
-	+ Possible custom post-processing required here
 + Use `seqxtant create` to make a new database
 + Use `seqxtant add` to add fasta and gff files to database
 + Use `seqxtant status` to get information about the database
@@ -27,7 +26,8 @@ that is either specified by an environment variable or passed in with the
 
 ## Fasta and GFF3 ##
 
-
+GFF isn't actually used yet. The only thing that will be required someday will
+be the genes, so very large files should be filtered.
 
 ## Dev Notes ##
 
