@@ -31,15 +31,35 @@ be the genes, so very large files should be filtered.
 
 ## Dev Notes ##
 
-Some clades used for testing
+All files downloaded from Ensembl for consistency.
 
-+ worms
-	+ C. angaria
-	+ C. brenneri
-	+ C. briggsae
-	+ C. elegans
-	+ C. japonica
-	+ C. remanei
-	+ C. tropicalis
-+ plants
-+ flies
+Some clades used for testing:
+
++ worms via Ensembl Metazoa
+	+ C. brenneri 3305
+	+ C. briggsae 367
+	+ C. elegans 7
+	+ C. japonica 18817
+	+ C. remanei 3670
++ plants via Ensembl Plants
+	+ A.thaliana 7
+	+ O.sativa 63
+	+ P.patnes 357
+	+ P.vulgaris 708
+	+ P.trichocarpa 46
+	+ S.lycopersicum 2148
+	+ V.vinifera 22
++ flies via Ensembl Metazoa
+	+ D.ananassae 13749
+	+ D.erecta 5124
+	+ D.grimshawi 17740
+	+ D.melanogaster 1870
+	+ D.mojavensis 6841
+	+ D.pseudoobscura 4790
+	+ D.sechellia 14730
+	+ D.simulans 7619
+	+ D.virilis 13530
+	+ D.willistoni 14838
+	+ D.yakuba 8122
+
+

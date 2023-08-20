@@ -141,6 +141,7 @@ def run_blast(arg, env, target):
 		'B=999 V=999 mformat=2',         # reporting
 		'topcomboN=999',                 # grouping
 		'warnings',                      # quiet
+		'golmax=10',
 		f'E={arg.evalue}',               # filtering
 		f'W={arg.wordsize}',             # capturing
 		f'hspsepSmax={arg.maxintron}',   # genome-dependent
@@ -215,8 +216,8 @@ def cluster(arg, env):
 				sb = hsps[0][2]
 				se = hsps[-1][3]
 			else:
-				sb = hsps[-1][3]
-				se = hsps[0][2]
+				sb = hsps[-1][2]
+				se = hsps[0][3]
 			seq = getseq(target, sid, sb, se, strand)
 			loc = f'{target}:{sid}:{sb}-{se}{strand}'
 			ls = len(seq)
@@ -289,7 +290,7 @@ parse_find.add_argument('--wordsize', type=int, required=False, default=9,
 	help='exact matches for seeding alignments [%(default)i]')
 parse_find.add_argument('--evalue', type=float, required=False, default=1e-10,
 	help='alignment E-value [%(default)g]')
-parse_find.add_argument('--maxintron', type=int, required=False, default=10000,
+parse_find.add_argument('--maxintron', type=int, required=False, default=1000,
 	help='maximum HSP separation [%(default)i]')
 parse_find.add_argument('--odir', required=True,
 	help='path to output directory')
