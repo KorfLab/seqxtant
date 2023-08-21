@@ -142,6 +142,7 @@ def run_blast(arg, env, target):
 		'topcomboN=999',                 # grouping
 		'warnings',                      # quiet
 		'golmax=10',
+		'lcmask',
 		f'E={arg.evalue}',               # filtering
 		f'W={arg.wordsize}',             # capturing
 		f'hspsepSmax={arg.maxintron}',   # genome-dependent
@@ -196,6 +197,7 @@ def cluster(arg, env):
 	
 	if not os.path.isdir(arg.odir):
 		os.mkdir(arg.odir)
+	if not os.path.isdir(f'{arg.odir}/seqs'):
 		os.mkdir(f'{arg.odir}/seqs')
 	
 	rlen = store_fasta(arg, env)
@@ -261,7 +263,7 @@ parse_add.add_argument('--genome', required=True,
 parse_add.add_argument('--fasta', required=True,
 	help='genome in fasta')
 parse_add.add_argument('--masked', required=True,
-	help='hard-masked genome in fasta')
+	help='soft-masked genome in fasta')
 parse_add.add_argument('--gff3', required=True,
 	help='annotation in gff3')
 parse_add.add_argument('--force', action='store_true',
