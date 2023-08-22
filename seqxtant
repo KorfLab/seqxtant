@@ -24,10 +24,86 @@ def run(arg, cmd):
 		raise Exception(f'{cmd} failed with status {ret}')
 	if arg.verbose: print(f' done', file=sys.stderr)
 
+## Utilities
+
+def read_fasta(filename):
+
+	label = None
+	seq = []
+
+	fp = None
+	if    filename == '-':         fp = sys.stdin
+	elif filename.endswith('.gz'): fp = gzip.open(filename, 'rt')
+	else:                          fp = open(filename)
+
+	while True:
+		line = fp.readline()
+		if line == '': break
+		line = line.rstrip()
+		if line.startswith('>'):
+			if len(seq) > 0:
+				seq = ''.join(seq)
+				yield(label, seq)
+				label = line[1:]
+				seq = []
+			else:
+				label = line[1:]
+		else:
+			seq.append(line)
+	yield(label, ''.join(seq))
+	fp.close()
+
+def reverse_complement(seq):
+	comp = str.maketrans('ACGTRYMKWSBDHVacgtrymkwsbdhv',
+		'TGCAYRKMWSVHDBtgcayrkmwsvhdb')
+	anti = seq.translate(comp)[::-1]
+	return anti
+
+def cbe(s):
+	m = re.search('(\S+):([\d,]+)[\-\.]+([\d,]+)', s)
+	if not m: raise Exception('location string malformed')
+	c = m.group(1)
+	b = int(m.group(2).replace(',', ''))
+	e = int(m.group(3).replace(',', ''))
+	return c, b, e
+
+def decorate_exons(seq, c, b, e, gff3):
+	found = []
+	with open(gff3) as fp:
+		for line in fp:
+			if line.startswith('#'): continue
+			f = line.split('\t')
+			beg = int(f[3])
+			end = int(f[4])
+			if f[0] != c: continue
+			if f[2] != 'CDS': continue
+			if beg <= e and end >= b: found.append( (beg - b, end - b) )
+
+	seq = list(seq.lower())
+	for beg, end in found:
+		for i in range(beg, end+1):
+			seq[i] = seq[i].upper()
+	return ''.join(seq)
+
+def getseq(filename, c, b, e, anti=False, cds=False):
+	seq = None
+	for defline, dna in read_fasta(filename):
+		words = defline.split()
+		sid = words[0]
+		if sid == c:
+			seq = dna[b-1:e]
+			break
+	if seq is None: raise Exception('getseq error, malformed location?')
+	if cds: seq = decorate_exons(seq.upper(), c, b, e, cds)
+	if anti: seq = reverse_complement(seq)
+	return seq
+
 ## Subcommand Functions
 
 def create(arg, env):
 	db = f'{env}/seqxtant.json'
+	if not os.path.isdir(arg.env):
+		os.mkdir(arg.env)
 	if os.path.isfile(db):
 		raise Exception(f'seqxtant databse already exists at {db}')
 	write_db(db, {'state': 'ready', 'genomes': []})
@@ -51,11 +127,13 @@ def add_genome(arg, env):
 	if arg.genome in d['genomes'] and not arg.force:
 		raise Exception(f'cannot add genome, {arg.genome} already present')
 
+	if not os.path.isdir(arg.env):
+		os.path.mkdir(arg.env)
+	
 	# copy files to build directory under new names
 	d['state'] = 'busy'
 	write_db(db, d)
 	dna = f'{arg.env}/{arg.genome}.fa'
-	msk = f'{arg.env}/{arg.genome}.masked.fa'
 	gff  = f'{arg.env}/{arg.genome}.gff3'
 	
 	# genome
@@ -65,13 +143,6 @@ def add_genome(arg, env):
 	else:
 		run(arg, f'cp -f {arg.fasta} {dna}')
 	
-	# masked genome
-	if arg.masked.endswith('.gz'):
-		run(arg, f'cp -f {arg.masked} {msk}.gz')
-		run(arg, f'gunzip -f {msk}.gz')
-	else:
-		run(arg, f'cp -f {arg.masked} {msk}')
-	
 	# gff3
 	if arg.gff3.endswith('.gz'):
 		run(arg, f'cp -f {arg.gff3} {gff}.gz')
@@ -79,10 +150,9 @@ def add_genome(arg, env):
 	else:
 		run(arg, f'cp -f {arg.gff3} {gff}')
 	
-	# make blast databases
+	# make blast database
 	write_db(db, d)
 	run(arg, f'xdformat -n -I {dna}')
-	run(arg, f'xdformat -n -I {msk}')
 	
 	# done
 	if arg.genome not in d['genomes']: d['genomes'].append(arg.genome)
@@ -102,47 +172,29 @@ def validate_genome(arg, env):
 	
 	run(arg, f'calfo --title {arg.genome} {ff} {g3} {ht}')
 
-def cbe(s):
-	m = re.search('(\S+):([\d,]+)[\-\.]+([\d,]+)', s)
-	if not m: raise Exception('location string malformed')
-	c = m.group(1)
-	b = int(m.group(2).replace(',', ''))
-	e = int(m.group(3).replace(',', ''))
-	return c, b, e
-
-def store_fasta(arg, env, masked=False):
+def store_query(arg, env):
 	c, b, e = cbe(arg.location)
-	if masked:
-		infile = f'{env}/{arg.genome}.masked.fa'
-		outfile = f'{arg.odir}/query.masked.fa'
-	else:
-		infile = f'{env}/{arg.genome}.fa'
-		outfile = f'{arg.odir}/query.fa'
-	
-	cmd = f'xdget -n -a {b} -b {e} {infile} {c}'
-	proc = subprocess.run(cmd, shell=True, capture_output=True)
-	if proc.returncode != 0: raise Exception(f'xdget failed: {proc.stderr}')
-	lines = proc.stdout.decode().split('\n')
-	lines[0] = f'>{arg.genome}-{arg.location}'
-	length = - len(lines[0])
+	infile = f'{env}/{arg.genome}.fa'
+	outfile = f'{arg.odir}/query.fa'
+	seq = getseq(infile, c, b, e)
 	with open(outfile, 'w') as fp:
-		for line in lines:
-			length += len(line)
-			fp.write(line)
-			fp.write('\n')
-	return length
+		fp.write(f'>query\n')
+		fp.write(seq)
+	return len(seq)
 
 def run_blast(arg, env, target):
-	qf = f'{arg.odir}/query.masked.fa'
+	qf = f'{arg.odir}/query.fa'
 	db = f'{env}/{target}.fa'
 	of = f'{arg.odir}/{target}.blastn'
+	if arg.mask: mask = 'lcfilter'
+	else:        mask = 'lcmask'
 	params = (
 		'M=1 N=-1 Q=2 R=2',              # alignment
 		'B=999 V=999 mformat=2',         # reporting
-		'topcomboN=999',                 # grouping
 		'warnings',                      # quiet
 		'golmax=10',
-		'lcmask',
+		mask,
+		f'topcomboN={arg.maxgroups}',    # grouping
 		f'E={arg.evalue}',               # filtering
 		f'W={arg.wordsize}',             # capturing
 		f'hspsepSmax={arg.maxintron}',   # genome-dependent
@@ -181,14 +233,6 @@ def run_blast(arg, env, target):
 				hsps[sid][strand][grp].sort( key=lambda x: x[0])
 				yield qid, sid, strand, hsps[sid][strand][grp]
 
-def getseq(filename, c, b, e, strand):
-	infile = f'{env}/{filename}.fa'
-	if strand == '-': (b, e) = (e, b)
-	cmd = f'xdget -n -a {b} -b {e} {infile} {c}'
-	proc = subprocess.run(cmd, shell=True, capture_output=True)
-	if proc.returncode != 0: raise Exception(f'xdget failed: {proc.stderr}')
-	lines = proc.stdout.decode().split('\n')
-	return ''.join(lines[1:])
 
 def cluster(arg, env):
 	db = f'{env}/seqxtant.json'
@@ -200,8 +244,7 @@ def cluster(arg, env):
 	if not os.path.isdir(f'{arg.odir}/seqs'):
 		os.mkdir(f'{arg.odir}/seqs')
 	
-	rlen = store_fasta(arg, env)
-	store_fasta(arg, env, masked=True)
+	rlen = store_query(arg, env)
 	
 	if arg.limit: targets = arg.limit
 	else:         targets = d['genomes']
@@ -209,6 +252,7 @@ def cluster(arg, env):
 	uid = 0
 	summary = []
 	for target in targets:
+		filename = f'{env}/{target}.fa'
 		if arg.genome == target and not arg.paralogs: continue
 		for qid, sid, strand, hsps in run_blast(arg, env, target):
 			qb = hsps[0][0]
@@ -220,7 +264,8 @@ def cluster(arg, env):
 			else:
 				sb = hsps[-1][2]
 				se = hsps[0][3]
-			seq = getseq(target, sid, sb, se, strand)
+			#seq = getseq(filename, sid, sb, se, strand)
+			seq = getseq(filename, sid, sb, se)
 			loc = f'{target}:{sid}:{sb}-{se}{strand}'
 			ls = len(seq)
 			with open(f'{arg.odir}/seqs/{uid}.fa', 'w') as fp:
@@ -235,6 +280,14 @@ def cluster(arg, env):
 	with open(f'{arg.odir}/summary.txt', 'w') as fp:
 		for uid, tid, sid, sb, se, st, ev, ln in summary:
 			fp.write(f'{uid}\t{tid}\t{sid}\t{sb}\t{se}\t{st}\t{ev}\t{ln}\n')
+
+def fetch(arg, env):
+	ff = f'{arg.env}/{arg.genome}.fa'
+	if arg.cds: g3 = f'{arg.env}/{arg.genome}.gff3'
+	else:       g3 = None
+	c, b, e = cbe(arg.location)
+	seq = getseq(ff, c, b, e, anti=arg.anti, cds=g3)
+	print(seq)
 
 ## CLI top-level ##
 parser = argparse.ArgumentParser(description='genomic homology multi-mapper')
@@ -261,9 +314,9 @@ parse_add = subparsers.add_parser('add',
 parse_add.add_argument('--genome', required=True,
 	help='genome name, e.g. C.elegans')
 parse_add.add_argument('--fasta', required=True,
-	help='genome in fasta')
-parse_add.add_argument('--masked', required=True,
-	help='soft-masked genome in fasta')
+	help='genome in fasta with soft masking')
+#parse_add.add_argument('--masked', required=True,
+#	help='soft-masked genome in fasta')
 parse_add.add_argument('--gff3', required=True,
 	help='annotation in gff3')
 parse_add.add_argument('--force', action='store_true',
@@ -292,6 +345,8 @@ parse_find.add_argument('--wordsize', type=int, required=False, default=9,
 	help='exact matches for seeding alignments [%(default)i]')
 parse_find.add_argument('--evalue', type=float, required=False, default=1e-10,
 	help='alignment E-value [%(default)g]')
+parse_find.add_argument('--maxgroups', type=int, required=False, default=10,
+	help='maximum number of alignment groups (genes-ish) [%(default)i]')
 parse_find.add_argument('--maxintron', type=int, required=False, default=1000,
 	help='maximum HSP separation [%(default)i]')
 parse_find.add_argument('--odir', required=True,
@@ -300,9 +355,24 @@ parse_find.add_argument('--limit', nargs='+', required=False,
 	help='limit to specific genomes')
 parse_find.add_argument('--cpus', type=int, required=False, default=1,
 	help='number of cpus to use [%(default)i]')
+parse_find.add_argument('--mask', action='store_true',
+	help='mask repeats in alignments (default mask seeds only)')
 parse_find.add_argument('--paralogs', action='store_true',
 	help='include paralogs from host genome')
 parse_find.set_defaults(func=cluster)
+
+### getseq sub-command
+parse_fetch = subparsers.add_parser('fetch',
+	help='retrieve sequence')
+parse_fetch.add_argument('--genome', required=True,
+	help='genome name')
+parse_fetch.add_argument('--location', required=True,
+	help='chrom:begin-end or chrom:beg..end (commas ok)')
+parse_fetch.add_argument('--cds', action='store_true',
+	help='use case to display CDS/introns (default repeats)')
+parse_fetch.add_argument('--anti', action='store_true',
+	help='report anti-parallel strand')
+parse_fetch.set_defaults(func=fetch)
 
 ### sub-command checkpoint
 try:
