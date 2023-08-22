@@ -186,11 +186,15 @@ def run_blast(arg, env, target):
 	qf = f'{arg.odir}/query.fa'
 	db = f'{env}/{target}.fa'
 	of = f'{arg.odir}/{target}.blastn'
-	if arg.mask: mask = 'lcfilter'
-	else:        mask = 'lcmask'
+	
+	if   arg.mask == 0: mask = ''
+	elif arg.mask == 1: mask = 'lcmask'
+	elif arg.mask == 2: mask = 'lcfilter'
+	else: raise Exception('no')
+		
 	params = (
 		'M=1 N=-1 Q=2 R=2',              # alignment
-		'B=999 V=999 mformat=2',         # reporting
+		'B=999 V=999 mformat=3',         # reporting
 		'warnings',                      # quiet
 		'golmax=10',
 		mask,
@@ -200,6 +204,7 @@ def run_blast(arg, env, target):
 		f'hspsepSmax={arg.maxintron}',   # genome-dependent
 		f'cpus={arg.cpus}',
 	)
+	
 	opts = ' '.join(params)
 	cmd = f'ab-blastn {db} {qf} -o {of} {opts}'
 	run(arg, cmd)
@@ -264,7 +269,6 @@ def cluster(arg, env):
 			else:
 				sb = hsps[-1][2]
 				se = hsps[0][3]
-			#seq = getseq(filename, sid, sb, se, strand)
 			seq = getseq(filename, sid, sb, se)
 			loc = f'{target}:{sid}:{sb}-{se}{strand}'
 			ls = len(seq)
@@ -355,8 +359,8 @@ parse_find.add_argument('--limit', nargs='+', required=False,
 	help='limit to specific genomes')
 parse_find.add_argument('--cpus', type=int, required=False, default=1,
 	help='number of cpus to use [%(default)i]')
-parse_find.add_argument('--mask', action='store_true',
-	help='mask repeats in alignments (default mask seeds only)')
+parse_find.add_argument('--mask', type=int, required=False, default=1,
+	help='masking level (0=none, 1=seeds, 2=sequences')
 parse_find.add_argument('--paralogs', action='store_true',
 	help='include paralogs from host genome')
 parse_find.set_defaults(func=cluster)
