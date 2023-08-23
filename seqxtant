@@ -180,7 +180,6 @@ def store_query(arg, env):
 	with open(outfile, 'w') as fp:
 		fp.write(f'>query\n')
 		fp.write(seq)
-	return len(seq)
 
 def run_blast(arg, env, target):
 	qf = f'{arg.odir}/query.fa'
@@ -249,7 +248,7 @@ def cluster(arg, env):
 	if not os.path.isdir(f'{arg.odir}/seqs'):
 		os.mkdir(f'{arg.odir}/seqs')
 	
-	rlen = store_query(arg, env)
+	store_query(arg, env)
 	
 	if arg.limit: targets = arg.limit
 	else:         targets = d['genomes']
@@ -319,8 +318,6 @@ parse_add.add_argument('--genome', required=True,
 	help='genome name, e.g. C.elegans')
 parse_add.add_argument('--fasta', required=True,
 	help='genome in fasta with soft masking')
-#parse_add.add_argument('--masked', required=True,
-#	help='soft-masked genome in fasta')
 parse_add.add_argument('--gff3', required=True,
 	help='annotation in gff3')
 parse_add.add_argument('--force', action='store_true',
